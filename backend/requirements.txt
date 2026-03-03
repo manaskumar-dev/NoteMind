@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+sentence-transformers
+faiss-cpu
+transformers
+accelerate
+bitsandbytes
+torch
+PyPDF2
