@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes import upload
+
 
 # Database
 from database import Base, engine
@@ -30,6 +32,7 @@ app.add_middleware(
 # Include routers
 app.include_router(notes.router)
 app.include_router(ai.router)
+app.include_router(upload.router)
 
 # Root endpoint
 @app.get("/")
