@@ -9,14 +9,14 @@ class TextInput(BaseModel):
 
 
 # Load summarization model
-# summarizer = pipeline(
-#     "summarization",
-#     model="facebook/bart-large-cnn"
-# )
 summarizer = pipeline(
     "summarization",
-    model="sshleifer/distilbart-cnn-12-6"
+    model="facebook/bart-large-cnn"
 )
+# summarizer = pipeline(
+#     "summarization",
+#     model="sshleifer/distilbart-cnn-12-6"
+# )
 
 
 @router.post("/summarize")
