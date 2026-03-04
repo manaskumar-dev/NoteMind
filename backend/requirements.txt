@@ -10,3 +10,4 @@ bitsandbytes
 torch
 PyPDF2
 PyMuPDF
+python-multipart
