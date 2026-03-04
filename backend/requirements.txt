@@ -9,3 +9,4 @@ accelerate
 bitsandbytes
 torch
 PyPDF2
+PyMuPDF
