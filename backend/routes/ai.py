@@ -9,9 +9,13 @@ class TextInput(BaseModel):
 
 
 # Load summarization model
+# summarizer = pipeline(
+#     "summarization",
+#     model="facebook/bart-large-cnn"
+# )
 summarizer = pipeline(
     "summarization",
-    model="facebook/bart-large-cnn"
+    model="sshleifer/distilbart-cnn-12-6"
 )
 
 
