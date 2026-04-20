@@ -39,5 +39,5 @@ app.include_router(upload.router)
 @app.get("/")
 def root():
     return {
-        "message": "NoteMind Backend task Running Successfully 🚀"
+        "message": "NoteMind Backend  Running Successfully 🚀"
     }
