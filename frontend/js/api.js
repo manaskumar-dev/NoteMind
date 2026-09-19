@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://notemind-1.onrender.com";
 
 const Api = {
   token: null,
