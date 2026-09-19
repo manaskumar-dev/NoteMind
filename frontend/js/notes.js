@@ -147,6 +147,7 @@ const Pages = {
             <button type="button" class="hl-swatch hl-green" data-hl="hl-green" title="Highlight green"></button>
             <button type="button" class="hl-swatch hl-pink" data-hl="hl-pink" title="Highlight pink"></button>
             <button type="button" class="hl-swatch hl-blue" data-hl="hl-blue" title="Highlight blue"></button>
+            <button type="button" class="hl-swatch hl-erase" id="rt-eraser-btn" title="Remove highlight"></button>
           </div>
           <div id="note-content" class="rt-editor" contenteditable="true" data-placeholder="Write your note..."></div>
 
@@ -251,9 +252,15 @@ const Pages = {
       btn.addEventListener("mousedown", (e) => e.preventDefault());
       btn.addEventListener("click", () => wrapSelection(btn.dataset.cmd));
     });
-    document.querySelectorAll(".hl-swatch").forEach((btn) => {
+    document.querySelectorAll(".hl-swatch[data-hl]").forEach((btn) => {
       btn.addEventListener("mousedown", (e) => e.preventDefault());
       btn.addEventListener("click", () => wrapSelection("mark", btn.dataset.hl));
+    });
+    document.getElementById("rt-eraser-btn").addEventListener("mousedown", (e) => e.preventDefault());
+    document.getElementById("rt-eraser-btn").addEventListener("click", () => {
+      eraseHighlight();
+      this.renderAiPane();
+      this.scheduleAutosave();
     });
 
     const editor = document.getElementById("note-content");
@@ -434,6 +441,7 @@ const Pages = {
         <div class="tabs-pill">
           ${["all", "today", "upcoming", "completed"].map((t) => `<button class="pill-tab ${this.reminderTab === t ? "active" : ""}" data-rtab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}
         </div>
+        <button class="btn-outline" id="notify-toggle-btn">${Notify.isEnabled() ? "🔔 Notifications On" : "🔕 Enable Notifications"}</button>
         <button class="btn-primary" id="add-reminder-btn">+ Add Reminder</button>
       </div>
       <div id="add-reminder-box" class="card hidden"></div>
@@ -445,6 +453,16 @@ const Pages = {
     });
 
     document.getElementById("add-reminder-btn").addEventListener("click", () => this.showAddReminderBox(container));
+    document.getElementById("notify-toggle-btn").addEventListener("click", async () => {
+      if (Notify.isEnabled()) {
+        Notify.disable();
+        Toast.info("Notifications turned off.");
+      } else {
+        const ok = await Notify.enable();
+        if (ok) { Notify.start(); Toast.success("Notifications enabled."); }
+      }
+      this.renderReminderPage(container, withReminders);
+    });
 
     container.querySelectorAll("[data-check]").forEach((cb) => {
       cb.addEventListener("change", async () => {
@@ -574,6 +592,43 @@ function escapeHtml(str) {
 function escapeAttr(str) { return escapeHtml(str).replace(/"/g, "&quot;"); }
 
 const HL_CLASSES = ["hl-yellow", "hl-green", "hl-pink", "hl-blue"];
+
+function unwrapMark(mark) {
+  const parent = mark.parentNode;
+  while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+  parent.removeChild(mark);
+}
+
+// Removes highlighting from the current selection. If the cursor is just
+// sitting inside a highlight (nothing selected), it clears that whole mark.
+// If text is selected, it clears every highlight the selection touches.
+function eraseHighlight() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+
+  if (range.collapsed) {
+    const node = sel.anchorNode;
+    const mark = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node).closest?.("mark");
+    if (mark) unwrapMark(mark);
+    return;
+  }
+
+  const container = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement;
+
+  container.querySelectorAll("mark").forEach((mark) => {
+    if (range.intersectsNode(mark)) unwrapMark(mark);
+  });
+
+  const startMark = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer.parentElement.closest("mark")
+    : null;
+  if (startMark) unwrapMark(startMark);
+
+  sel.removeAllRanges();
+}
 
 function wrapSelection(tagName, className) {
   const sel = window.getSelection();

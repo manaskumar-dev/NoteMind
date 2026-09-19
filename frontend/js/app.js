@@ -37,6 +37,7 @@ const App = {
   enterApp() {
     document.getElementById("auth-view").classList.add("hidden");
     document.getElementById("app-view").classList.remove("hidden");
+    if (Notify.isEnabled()) Notify.start();
     this.navigate("dashboard");
   },
 

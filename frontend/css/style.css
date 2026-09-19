@@ -182,6 +182,11 @@ button { cursor: pointer; border: none; border-radius: var(--radius); }
 .hl-swatch.hl-green { background: #b9f6ca; }
 .hl-swatch.hl-pink { background: #ffcdd6; }
 .hl-swatch.hl-blue { background: #bbdefb; }
+.hl-swatch.hl-erase { background: #fff; border: 1px solid var(--border, #e2e2ea); position: relative; }
+.hl-swatch.hl-erase::after {
+  content: ""; position: absolute; inset: 5px;
+  border-top: 2px solid #d33; transform: rotate(45deg);
+}
 
 .rt-editor {
   min-height: 320px; max-height: 480px; overflow-y: auto;
