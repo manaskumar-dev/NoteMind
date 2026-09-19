@@ -11,6 +11,8 @@ const App = {
   currentPage: "dashboard",
 
   init() {
+    this.wireProfileMenu();
+    this.wireSettingsModal();
     document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
     Auth.init();
 
@@ -46,6 +48,73 @@ const App = {
   enterAuth() {
     document.getElementById("app-view").classList.add("hidden");
     document.getElementById("auth-view").classList.remove("hidden");
+  },
+
+  wireProfileMenu() {
+    const btn = document.getElementById("profile-menu-btn");
+    const popover = document.getElementById("profile-popover");
+    btn.addEventListener("click", (e) => { e.stopPropagation(); popover.classList.toggle("hidden"); });
+    document.addEventListener("click", (e) => {
+      if (!popover.classList.contains("hidden") && !popover.contains(e.target) && e.target !== btn) popover.classList.add("hidden");
+    });
+    document.getElementById("popover-settings-btn").addEventListener("click", () => {
+      popover.classList.add("hidden");
+      this.openSettingsModal();
+    });
+    document.getElementById("popover-logout-btn").addEventListener("click", () => {
+      popover.classList.add("hidden");
+      Auth.logout();
+    });
+  },
+
+  wireSettingsModal() {
+    const overlay = document.getElementById("settings-modal-overlay");
+    document.getElementById("settings-modal-close").addEventListener("click", () => this.closeSettingsModal());
+    document.getElementById("settings-modal-cancel").addEventListener("click", () => this.closeSettingsModal());
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) this.closeSettingsModal(); });
+
+    document.querySelectorAll(".appearance-option").forEach((opt) => {
+      opt.addEventListener("click", () => {
+        document.querySelectorAll(".appearance-option").forEach((o) => o.classList.remove("active"));
+        opt.classList.add("active");
+        const theme = opt.dataset.themeOption;
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem("theme", theme);
+        this.updateThemeButton();
+      });
+    });
+
+    document.getElementById("settings-display-name").addEventListener("input", (e) => {
+      document.getElementById("settings-avatar").textContent = (e.target.value.trim()[0] || "?").toUpperCase();
+    });
+
+    document.getElementById("settings-modal-save").addEventListener("click", () => {
+      localStorage.setItem("displayName", document.getElementById("settings-display-name").value.trim());
+      Toast.success("Settings saved.");
+      this.closeSettingsModal();
+      if (this.currentPage === "dashboard") Dashboard.render(document.getElementById("content-area"));
+    });
+  },
+
+  updateThemeButton() {
+    const button = document.getElementById("theme-toggle-btn");
+    if (button) button.textContent = document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode";
+  },
+
+  openSettingsModal() {
+    const name = localStorage.getItem("displayName") || "";
+    document.getElementById("settings-display-name").value = name;
+    document.getElementById("settings-avatar").textContent = (name.trim()[0] || "?").toUpperCase();
+    document.getElementById("settings-signed-in-email").textContent = Api.userEmail || "";
+    const currentTheme = document.documentElement.dataset.theme || "light";
+    document.querySelectorAll(".appearance-option").forEach((opt) => {
+      opt.classList.toggle("active", opt.dataset.themeOption === currentTheme);
+    });
+    document.getElementById("settings-modal-overlay").classList.remove("hidden");
+  },
+
+  closeSettingsModal() {
+    document.getElementById("settings-modal-overlay").classList.add("hidden");
   },
 
   async navigate(page, opts = {}) {

@@ -93,10 +93,6 @@ const Pages = {
         const dropdown = document.getElementById(`menu-${btn.dataset.menu}`);
         document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
         dropdown.classList.toggle("hidden");
-        if (!dropdown.classList.contains("hidden")) {
-          const rect = dropdown.getBoundingClientRect();
-          dropdown.classList.toggle("flip-up", rect.bottom > window.innerHeight);
-        }
       });
     });
     body.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", (e) => { e.stopPropagation(); this.noteEditor(Number(btn.dataset.edit)); }));
@@ -514,10 +510,6 @@ const Pages = {
         const dropdown = document.getElementById(`rmenu-${btn.dataset.menu}`);
         document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
         dropdown.classList.toggle("hidden");
-        if (!dropdown.classList.contains("hidden")) {
-          const rect = dropdown.getBoundingClientRect();
-          dropdown.classList.toggle("flip-up", rect.bottom > window.innerHeight);
-        }
       });
     });
     container.querySelectorAll("[data-cancel]").forEach((btn) => {
@@ -584,8 +576,8 @@ const Pages = {
           <div class="avatar-lg">${initial}</div>
           <h3>${escapeHtml(email.split("@")[0])}</h3>
           <p class="hint">${escapeHtml(email)}</p>
-          <button class="btn-outline btn-block" id="profile-settings-btn">⚙️ Settings</button>
-          <button class="btn-danger-outline btn-block" id="profile-logout-btn">↩️ Logout</button>
+          <button class="btn-outline btn-block" id="profile-settings-btn">Settings</button>
+          <button class="btn-danger-outline btn-block" id="profile-logout-btn">Logout</button>
         </div>
         <div class="card">
           <h3>Settings</h3>
@@ -639,14 +631,6 @@ explore(container) {
   settings(container) {
     container.innerHTML = `<div class="card settings-card"><h3>Settings</h3>${this.settingsRows()}</div>`;
     this.wireSettingsRows(container);
-  },
-
-  settingsRows() {
-    return `
-      <button class="settings-row" data-setting="password"><span>🔒 Change Password</span><span>›</span></button>
-      <button class="settings-row" data-setting="notifications"><span>🔔 Notification Preferences</span><span>›</span></button>
-      <button class="settings-row" data-setting="appearance"><span>🎨 Appearance</span><span>›</span></button>
-    `;
   },
 
   wireSettingsRows(container) {

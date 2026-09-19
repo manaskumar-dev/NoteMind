@@ -2,7 +2,7 @@ const Dashboard = {
   async render(container) {
     container.innerHTML = `<div class="state-loading">${Spinner.html()}<p>Loading dashboard...</p></div>`;
 
-    const name = (Api.userEmail || "there").split("@")[0];
+    const name = localStorage.getItem("displayName");
     document.getElementById("page-title").textContent = `Welcome back, ${name}! 👋`;
     document.getElementById("page-subtitle").textContent = "Here's a quick overview of your notes.";
 

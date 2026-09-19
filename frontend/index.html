@@ -68,8 +68,14 @@
       <button class="nav-item" data-page="explore">Explore</button>
     </nav>
     <div class="nav nav-bottom">
-      <button class="nav-item" data-page="profile">Profile</button>
-    </div>
+      <div class="profile-menu-wrap">
+         <button class="nav-item" id="profile-menu-btn">Profile</button>
+           <div class="profile-popover hidden" id="profile-popover">
+             <button id="popover-settings-btn">Settings</button>
+             <button id="popover-logout-btn" class="danger">Logout</button>
+            </div>
+       </div>
+      </div>
   </aside>
 
   <div class="main-col">
@@ -87,15 +93,44 @@
     <main id="content-area" class="content-area"></main>
   </div>
 </section>
-
+<div id="settings-modal-overlay" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" id="settings-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-avatar-row">
+        <div class="avatar-lg" id="settings-avatar">?</div>
+        <p class="hint">Generated from your display name.<br>Updates automatically when you change it below.</p>
+      </div>
+      <div>
+        <label class="field-label">Display name</label>
+        <input type="text" id="settings-display-name" placeholder="Your name">
+      </div>
+      <div>
+        <label class="field-label">Appearance</label>
+        <div class="appearance-toggle">
+          <button type="button" class="appearance-option" data-theme-option="light">Light</button>
+          <button type="button" class="appearance-option" data-theme-option="dark">Dark</button>
+        </div>
+      </div>
+      <p class="hint signed-in-as">Signed in as <span id="settings-signed-in-email"></span></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" id="settings-modal-cancel">Cancel</button>
+      <button class="btn-primary" id="settings-modal-save">Save</button>
+    </div>
+  </div>
+</div>
 <div id="toast-container" class="toast-container"></div>
 
-<script src="js/api.js?v=3"></script>
-<script src="js/toast.js?v=3"></script>
-<script src="js/auth.js?v=3"></script>
-<script src="js/dashboard.js?v=3"></script>
-<script src="js/notes.js?v=3"></script>
-<script src="js/notify.js?v=3"></script>
-<script src="js/app.js?v=3"></script>
+<script src="js/api.js?v=6"></script>
+<script src="js/toast.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/dashboard.js?v=6"></script>
+<script src="js/notes.js?v=6"></script>
+<script src="js/notify.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>
