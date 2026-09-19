@@ -94,6 +94,8 @@ const Api = {
   // ---- AI ----
   summarize(noteId) { return this.request("/ai/summarize", { method: "POST", body: { note_id: noteId } }); },
   refine(noteId) { return this.request("/ai/refine", { method: "POST", body: { note_id: noteId } }); },
+  explainSimply(noteId) { return this.request("/ai/explain", { method: "POST", body: { note_id: noteId } }); },
+  explainTopic(topic) { return this.request("/ai/explain-topic", { method: "POST", body: { topic } }); },
 
   // ---- Upload (XHR so we can report real progress) ----
   uploadPdf(file, onProgress) {

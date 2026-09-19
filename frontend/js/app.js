@@ -1,7 +1,8 @@
 const PAGE_TITLES = {
-  dashboard: null, // Dashboard sets its own greeting/subtitle
+  dashboard: null,
   notes: "My Notes",
   reminders: "Reminders",
+  explore: "Explore a Topic",
   profile: "Profile",
   settings: "Settings",
 };
@@ -10,6 +11,7 @@ const App = {
   currentPage: "dashboard",
 
   init() {
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
     Auth.init();
 
     document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
@@ -61,6 +63,7 @@ const App = {
       switch (page) {
         case "dashboard": await Dashboard.render(container); break;
         case "notes": await Pages.notesList(container, opts); break;
+        case "explore": Pages.explore(container); break;
         case "reminders": await Pages.reminders(container); break;
         case "profile": Pages.profile(container); break;
         case "settings": Pages.settings(container); break;

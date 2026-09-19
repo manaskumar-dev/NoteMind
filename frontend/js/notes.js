@@ -65,7 +65,7 @@ const Pages = {
           <span class="note-line-title">${escapeHtml(n.title)}</span>
           <span class="tags">${n.tags.map((t) => `<span class="tag-pill" data-filter-tag="${escapeAttr(t.name)}">#${escapeHtml(t.name)}</span>`).join("")}</span>
         </div>
-        <span class="note-line-date">${new Date(n.updated_at).toLocaleDateString()}</span>
+        <span class="note-line-date">${timeAgo(n.updated_at)}</span>
         <div class="row-menu">
           <button class="row-menu-btn" data-menu="${n.id}">⋮</button>
           <div class="row-menu-dropdown hidden" id="menu-${n.id}">
@@ -93,6 +93,10 @@ const Pages = {
         const dropdown = document.getElementById(`menu-${btn.dataset.menu}`);
         document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
         dropdown.classList.toggle("hidden");
+        if (!dropdown.classList.contains("hidden")) {
+          const rect = dropdown.getBoundingClientRect();
+          dropdown.classList.toggle("flip-up", rect.bottom > window.innerHeight);
+        }
       });
     });
     body.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", (e) => { e.stopPropagation(); this.noteEditor(Number(btn.dataset.edit)); }));
@@ -150,6 +154,7 @@ const Pages = {
             <button type="button" class="hl-swatch hl-erase" id="rt-eraser-btn" title="Remove highlight"></button>
           </div>
           <div id="note-content" class="rt-editor" contenteditable="true" data-placeholder="Write your note..."></div>
+          <span id="editor-wordcount" class="hint"></span>
 
           <label class="field-label">Tags</label>
           <div id="tag-pills" class="tag-pills"></div>
@@ -163,6 +168,7 @@ const Pages = {
               <div class="ai-buttons">
                 <button class="btn-outline" id="ai-summarize-btn" ${id ? "" : "disabled"}>Summarize</button>
                 <button class="btn-outline" id="ai-refine-btn" ${id ? "" : "disabled"}>Fix Grammar</button>
+                <button class="btn-outline" id="ai-explain-btn" ${id ? "" : "disabled"}>Explain Simply</button>
               </div>
             </div>
             ${id ? "" : '<p class="hint">Save the note first to use AI tools.</p>'}
@@ -199,6 +205,7 @@ const Pages = {
     this.renderReminder(note.reminder, id);
     this.wireEditorEvents(id);
     this.renderAiPane();
+    this.updateWordCount();
   },
 
   renderTagPills(names) {
@@ -264,7 +271,7 @@ const Pages = {
     });
 
     const editor = document.getElementById("note-content");
-    editor.addEventListener("input", () => { this.renderAiPane(); this.scheduleAutosave(); });
+    editor.addEventListener("input", () => { this.renderAiPane(); this.scheduleAutosave(); this.updateWordCount(); });
     editor.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); document.execCommand("insertLineBreak"); }
     });
@@ -272,6 +279,14 @@ const Pages = {
       e.preventDefault();
       const text = (e.clipboardData || window.clipboardData).getData("text/plain");
       document.execCommand("insertText", false, text);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === "s") { e.preventDefault(); this.saveNote(false); }
+      if (e.key === "b") { e.preventDefault(); wrapSelection("strong"); }
+      if (e.key === "i") { e.preventDefault(); wrapSelection("em"); }
+      if (e.key === "u") { e.preventDefault(); wrapSelection("u"); }
     });
 
     const tagInput = document.getElementById("tag-input");
@@ -286,6 +301,7 @@ const Pages = {
 
     document.getElementById("ai-summarize-btn").addEventListener("click", () => this.runAi("summarize"));
     document.getElementById("ai-refine-btn").addEventListener("click", () => this.runAi("refine"));
+    document.getElementById("ai-explain-btn").addEventListener("click", () => this.runAi("explain"));
 
     const dropzone = document.getElementById("editor-dropzone");
     const pdfInput = document.getElementById("editor-pdf-input");
@@ -299,15 +315,18 @@ const Pages = {
     const title = document.getElementById("ai-pane-title");
     const body = document.getElementById("ai-pane-body");
     const actions = document.getElementById("ai-pane-actions");
+    const titles = { summarize: "AI Summary", refine: "AI Grammar Fix", explain: "Simple Explanation" };
+    const applyLabels = { summarize: "Use This Summary", refine: "Apply Grammar Fix", explain: "Add Explanation" };
+    const dismissLabels = { summarize: "Discard Summary", refine: "Discard Corrections", explain: "Discard Explanation" };
 
     if (this.aiMode && this.aiResultText !== null) {
-      title.textContent = this.aiMode === "summarize" ? "AI Summary" : "AI Grammar Fix";
+      title.textContent = titles[this.aiMode];
       body.innerHTML = simpleMarkdownPreview(this.aiResultText);
 
       const applyBtn = document.getElementById("ai-apply-btn");
       const dismissBtn = document.getElementById("ai-dismiss-btn");
-      applyBtn.textContent = this.aiMode === "summarize" ? "Use This Summary" : "Apply Grammar Fix";
-      dismissBtn.textContent = this.aiMode === "summarize" ? "Discard Summary" : "Discard Corrections";
+      applyBtn.textContent = applyLabels[this.aiMode];
+      dismissBtn.textContent = dismissLabels[this.aiMode];
       applyBtn.onclick = () => this.acceptAiResult();
       dismissBtn.onclick = () => this.dismissAiResult();
       actions.classList.remove("hidden");
@@ -317,6 +336,12 @@ const Pages = {
       body.innerHTML = content.trim() ? simpleMarkdownPreview(content) : '<p class="hint">Nothing to preview yet.</p>';
       actions.classList.add("hidden");
     }
+  },
+
+  updateWordCount() {
+    const text = document.getElementById("note-content").innerText.trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    document.getElementById("editor-wordcount").textContent = `${words} words · ${text.length} characters`;
   },
 
   scheduleAutosave() {
@@ -363,11 +388,12 @@ const Pages = {
 
   async runAi(kind) {
     if (!this.currentEditorId) return;
-    Toast.info(kind === "summarize" ? "Summarizing..." : "Refining grammar...");
+    const labels = { summarize: "Summarizing...", refine: "Refining grammar...", explain: "Explaining..." };
+    Toast.info(labels[kind]);
     try {
-      const { result } = kind === "summarize"
-        ? await Api.summarize(this.currentEditorId)
-        : await Api.refine(this.currentEditorId);
+      const { result } = kind === "summarize" ? await Api.summarize(this.currentEditorId) :
+        kind === "refine" ? await Api.refine(this.currentEditorId) :
+        await Api.explainSimply(this.currentEditorId);
       this.aiMode = kind;
       this.aiResultText = result;
       this.renderAiPane();
@@ -377,12 +403,23 @@ const Pages = {
   },
 
   async acceptAiResult() {
-    document.getElementById("note-content").innerHTML = markdownToEditableHtml(this.aiResultText);
-    const wasSummarize = this.aiMode === "summarize";
+    const editor = document.getElementById("note-content");
+    const mode = this.aiMode;
+
+    if (mode === "refine") {
+      editor.innerHTML = markdownToEditableHtml(this.aiResultText);
+    } else {
+      const heading = mode === "summarize" ? "Summary" : "Simple Explanation";
+      const sectionHtml = markdownToEditableHtml(this.aiResultText);
+      editor.innerHTML += `<div class="md-line"><strong>${heading}</strong></div>${sectionHtml}`;
+    }
+
     this.aiMode = null;
     this.aiResultText = null;
     await this.saveNote(false);
-    Toast.success(wasSummarize ? "Note replaced with AI summary." : "Grammar corrections applied.");
+    const messages = { summarize: "Summary added to your notes.", refine: "Grammar corrections applied.", explain: "Explanation added to your notes." };
+    Toast.success(messages[mode]);
+    this.updateWordCount();
     this.renderAiPane();
   },
 
@@ -477,6 +514,10 @@ const Pages = {
         const dropdown = document.getElementById(`rmenu-${btn.dataset.menu}`);
         document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
         dropdown.classList.toggle("hidden");
+        if (!dropdown.classList.contains("hidden")) {
+          const rect = dropdown.getBoundingClientRect();
+          dropdown.classList.toggle("flip-up", rect.bottom > window.innerHeight);
+        }
       });
     });
     container.querySelectorAll("[data-cancel]").forEach((btn) => {
@@ -556,6 +597,44 @@ const Pages = {
     this.wireSettingsRows(container);
   },
 
+  // ---------------- EXPLORE (topic search) ----------------
+explore(container) {
+  container.innerHTML = `
+    <div class="card">
+      <h3>Ask about any topic</h3>
+      <p class="hint">Type a topic or question and get a simple, plain-language explanation.</p>
+      <div class="input-icon search-box">
+        <span>🔎</span>
+        <input type="text" id="explore-input" placeholder="e.g. What is machine learning?">
+      </div>
+      <button class="btn-primary" id="explore-btn">Explain</button>
+      <div id="explore-result" class="preview" style="margin-top:16px;"></div>
+    </div>
+  `;
+
+  const input = document.getElementById("explore-input");
+  const btn = document.getElementById("explore-btn");
+  const result = document.getElementById("explore-result");
+
+  const run = async () => {
+    const topic = input.value.trim();
+    if (!topic) return;
+    btn.disabled = true;
+    result.innerHTML = `<div class="state-loading">${Spinner.html()}<p>Explaining...</p></div>`;
+    try {
+      const { result: text } = await Api.explainTopic(topic);
+      result.innerHTML = simpleMarkdownPreview(text);
+    } catch (err) {
+      result.innerHTML = ErrorState.html(err.message, "");
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  btn.addEventListener("click", run);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+},
+
   // ---------------- SETTINGS ----------------
   settings(container) {
     container.innerHTML = `<div class="card settings-card"><h3>Settings</h3>${this.settingsRows()}</div>`;
@@ -572,12 +651,29 @@ const Pages = {
 
   wireSettingsRows(container) {
     container.querySelectorAll("[data-setting]").forEach((btn) => {
-      btn.addEventListener("click", () => Toast.info(`${btn.textContent.trim()} isn't part of this demo build.`));
+      if (btn.dataset.setting === "appearance") {
+        btn.addEventListener("click", () => {
+          const isDark = document.documentElement.dataset.theme === "dark";
+          document.documentElement.dataset.theme = isDark ? "light" : "dark";
+          localStorage.setItem("theme", isDark ? "light" : "dark");
+        });
+      } else {
+        btn.addEventListener("click", () => Toast.info(`${btn.textContent.trim()} isn't part of this demo build.`));
+      }
     });
   },
 };
 
 // ---------------- shared helpers ----------------
+function timeAgo(dateStr) {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 function debounce(fn, delay) {
   let timer;
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };

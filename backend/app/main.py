@@ -1,11 +1,13 @@
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, engine, get_db
 from app.routers import auth, notes, tags, upload, ai
 
 logging.basicConfig(level=logging.INFO)
@@ -40,5 +42,9 @@ app.include_router(ai.router)
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "ok"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "error", "db": "unreachable"})

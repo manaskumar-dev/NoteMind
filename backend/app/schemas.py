@@ -96,6 +96,14 @@ class RefineRequest(BaseModel):
     note_id: int
 
 
+class ExplainRequest(BaseModel):
+    note_id: int
+
+
+class TopicExplainRequest(BaseModel):
+    topic: str = Field(min_length=1, max_length=300)
+
+
 class AIResultOut(BaseModel):
     note_id: int
     result: str

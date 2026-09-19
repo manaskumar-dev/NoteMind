@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.utils.rate_limit import enforce_rate_limit
-from app.utils.gemini_client import summarize_text, refine_grammar
+from app.utils.gemini_client import summarize_text, refine_grammar, explain_simple, explain_topic
 from app import models, schemas
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -31,3 +31,18 @@ def refine(payload: schemas.RefineRequest, user: models.User = Depends(get_curre
     note = _owned_note(payload.note_id, user, db)
     result = refine_grammar(note.content_md)
     return schemas.AIResultOut(note_id=note.id, result=result)
+
+
+@router.post("/explain", response_model=schemas.AIResultOut)
+def explain(payload: schemas.ExplainRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    enforce_rate_limit(user.id)
+    note = _owned_note(payload.note_id, user, db)
+    result = explain_simple(note.content_md)
+    return schemas.AIResultOut(note_id=note.id, result=result)
+
+
+@router.post("/explain-topic", response_model=schemas.AIResultOut)
+def explain_topic_route(payload: schemas.TopicExplainRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    enforce_rate_limit(user.id)
+    result = explain_topic(payload.topic)
+    return schemas.AIResultOut(note_id=0, result=result)

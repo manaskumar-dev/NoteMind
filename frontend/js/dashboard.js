@@ -53,7 +53,7 @@ const Dashboard = {
           <div class="note-row-snippet">${snippet}${n.content_md.length > 70 ? "..." : ""}</div>
           <div class="tags">${n.tags.map((t) => `<span class="tag-pill">#${escapeHtml(t.name)}</span>`).join("")}</div>
         </div>
-        <div class="note-row-date">${new Date(n.updated_at).toLocaleDateString()}</div>
+        <div class="note-row-date">${timeAgo(n.updated_at)}</div>
       </div>`;
   },
 
