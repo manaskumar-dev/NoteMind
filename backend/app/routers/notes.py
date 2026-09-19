@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.utils.markdown_sanitize import render_markdown_safe
-from app.utils.spaced_repetition import next_review_date, advance_stage
+from app.utils.spaced_repetition import INTERVALS_DAYS, next_review_date, advance_stage
 from app import models, schemas
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -61,6 +61,16 @@ def list_notes(
     return query.order_by(models.Note.updated_at.desc()).all()
 
 
+@router.get("/due/list", response_model=list[schemas.NoteOut])
+def due_notes(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return (
+        db.query(models.Note)
+        .join(models.Reminder)
+        .filter(models.Note.owner_id == user.id, models.Reminder.next_review_at <= datetime.now(timezone.utc))
+        .all()
+    )
+
+
 @router.get("/{note_id}", response_model=schemas.NoteOut)
 def get_note(note_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _get_owned_note(note_id, user, db)
@@ -113,18 +123,22 @@ def complete_review(note_id: int, user: models.User = Depends(get_current_user),
     if not note.reminder:
         raise HTTPException(status_code=404, detail="No active reminder for this note")
     reminder = note.reminder
-    reminder.stage = advance_stage(reminder.stage)
-    reminder.next_review_at = next_review_date(reminder.stage)
+    if reminder.completed:
+        raise HTTPException(status_code=400, detail="Reminder already completed")
+    if reminder.stage >= len(INTERVALS_DAYS) - 1:
+        reminder.completed = True
+    else:
+        reminder.stage = advance_stage(reminder.stage)
+        reminder.next_review_at = next_review_date(reminder.stage)
     db.commit()
     db.refresh(reminder)
     return reminder
 
 
-@router.get("/due/list", response_model=list[schemas.NoteOut])
-def due_notes(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return (
-        db.query(models.Note)
-        .join(models.Reminder)
-        .filter(models.Note.owner_id == user.id, models.Reminder.next_review_at <= datetime.utcnow())
-        .all()
-    )
+@router.delete("/{note_id}/reminder", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_reminder(note_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    note = _get_owned_note(note_id, user, db)
+    if not note.reminder:
+        raise HTTPException(status_code=404, detail="No active reminder for this note")
+    db.delete(note.reminder)
+    db.commit()

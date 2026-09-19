@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
@@ -21,7 +21,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     notes = relationship("Note", back_populates="owner", cascade="all, delete-orphan")
 
@@ -34,8 +34,8 @@ class Note(Base):
     title = Column(String, nullable=False)
     content_md = Column(Text, default="")  # raw markdown, sanitized only at render time
     source = Column(String, default="manual")  # manual | pdf | ai_summary
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="notes")
     tags = relationship("Tag", secondary=note_tags, back_populates="notes")

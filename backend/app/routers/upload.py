@@ -17,10 +17,11 @@ async def upload_pdf(
 ):
     raw = await file.read()
     text = validate_and_extract_text(file, raw)
+    filename = file.filename or "upload.pdf"
 
     note = models.Note(
         owner_id=user.id,
-        title=file.filename.rsplit(".", 1)[0][:200] or "Untitled PDF",
+        title=filename.rsplit(".", 1)[0][:200] or "Untitled PDF",
         content_md=text,
         source="pdf",
     )

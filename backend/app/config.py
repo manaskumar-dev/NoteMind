@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     database_url: str = "sqlite:///./notes.db"
     gemini_api_key: str
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     cors_origins: str = "http://localhost:5500"
     max_pdf_size_mb: int = 5
     ai_rate_limit_per_minute: int = 5

@@ -1,229 +1,652 @@
-const Notes = {
-  currentId: null,
+const Pages = {
+  currentEditorId: null,
   autosaveTimer: null,
+  selectedTagFilter: "",
+  reminderTab: "all",
 
-  init() {
-    document.getElementById("new-note-btn").addEventListener("click", () => this.newNote());
-    document.getElementById("save-btn").addEventListener("click", () => this.save());
-    document.getElementById("delete-btn").addEventListener("click", () => this.remove());
-    document.getElementById("summarize-btn").addEventListener("click", () => this.runAi("summarize"));
-    document.getElementById("refine-btn").addEventListener("click", () => this.runAi("refine"));
-    document.getElementById("reminder-btn").addEventListener("click", () => this.startReminder());
-    document.getElementById("ai-apply-btn").addEventListener("click", () => this.applyAiResult());
-    document.getElementById("ai-dismiss-btn").addEventListener("click", () => this.hideAiResult());
-    document.getElementById("pdf-input").addEventListener("change", (e) => this.uploadPdf(e));
+  // ---------------- NOTES LIST ----------------
+  async notesList(container, opts = {}) {
+    if (opts.presetTag !== undefined) this.selectedTagFilter = opts.presetTag;
 
-    document.getElementById("search-input").addEventListener("input", debounce(() => this.refreshList(), 300));
-    document.getElementById("tag-filter").addEventListener("change", () => this.refreshList());
-    document.getElementById("note-content").addEventListener("input", () => this.onEdit());
-    document.getElementById("note-title").addEventListener("input", () => this.onEdit());
-    document.getElementById("note-tags").addEventListener("input", () => this.onEdit());
+    container.innerHTML = `
+      <div class="list-toolbar">
+        <div class="input-icon search-box"><span>🔍</span><input type="search" id="notes-search" placeholder="Search notes..."></div>
+        <select id="notes-sort">
+          <option value="updated_desc">Sort: Latest</option>
+          <option value="updated_asc">Sort: Oldest</option>
+          <option value="title_asc">Sort: Title A-Z</option>
+        </select>
+        ${this.selectedTagFilter ? `<span class="active-filter">#${escapeHtml(this.selectedTagFilter)} <button id="clear-tag-filter">×</button></span>` : ""}
+      </div>
+      <div id="notes-list-body"></div>
+    `;
+
+    document.getElementById("notes-search").addEventListener("input", debounce(() => this.loadNotesList(), 300));
+    document.getElementById("notes-sort").addEventListener("change", () => this.loadNotesList());
+    const clearBtn = document.getElementById("clear-tag-filter");
+    if (clearBtn) clearBtn.addEventListener("click", () => { this.selectedTagFilter = ""; this.notesList(container); });
+
+    await this.loadNotesList();
+
+    if (opts.newNote) this.noteEditor(null);
+    if (opts.openId) this.noteEditor(opts.openId);
   },
 
-  async refreshList() {
-    const q = document.getElementById("search-input").value.trim();
-    const tag = document.getElementById("tag-filter").value;
-    const notes = await Api.listNotes(q, tag);
-    this.renderList(notes);
-    await this.refreshTagFilter();
-  },
+  async loadNotesList() {
+    const body = document.getElementById("notes-list-body");
+    if (!body) return;
+    body.innerHTML = `<div class="state-loading">${Spinner.html()}<p>Fetching your notes...</p></div>`;
 
-  async refreshTagFilter() {
-    const tags = await Api.listTags();
-    const select = document.getElementById("tag-filter");
-    const current = select.value;
-    select.innerHTML = '<option value="">All tags</option>' +
-      tags.map((t) => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`).join("");
-    select.value = current;
-  },
+    const q = document.getElementById("notes-search").value.trim();
+    const sort = document.getElementById("notes-sort").value;
 
-  renderList(notes) {
-    const list = document.getElementById("notes-list");
-    if (notes.length === 0) {
-      list.innerHTML = '<p style="color:var(--muted);padding:0.5rem;">No notes yet.</p>';
+    let notes;
+    try {
+      notes = await Api.listNotes(q, this.selectedTagFilter);
+    } catch (err) {
+      body.innerHTML = ErrorState.html(err.message, "Pages.loadNotesList()");
       return;
     }
-    list.innerHTML = notes.map((n) => `
-      <div class="note-card ${n.id === this.currentId ? "active" : ""}" data-id="${n.id}">
-        <h3>${escapeHtml(n.title)}</h3>
-        <p>${new Date(n.updated_at).toLocaleDateString()} · ${escapeHtml(n.source)}</p>
-        <div class="tags">${n.tags.map((t) => `<span class="tag-pill">${escapeHtml(t.name)}</span>`).join("")}</div>
-      </div>
-    `).join("");
 
-    list.querySelectorAll(".note-card").forEach((card) => {
-      card.addEventListener("click", () => this.open(Number(card.dataset.id)));
+    notes.sort((a, b) => {
+      if (sort === "updated_asc") return new Date(a.updated_at) - new Date(b.updated_at);
+      if (sort === "title_asc") return a.title.localeCompare(b.title);
+      return new Date(b.updated_at) - new Date(a.updated_at);
+    });
+
+    if (notes.length === 0) {
+      body.innerHTML = EmptyState.html("No notes yet", "Start by creating your first note.", "+ Create Note", "Pages.noteEditor(null)");
+      return;
+    }
+
+    body.innerHTML = `<div class="notes-table">${notes.map((n) => `
+      <div class="note-line" data-id="${n.id}">
+        <div class="note-line-main">
+          <span class="note-line-title">${escapeHtml(n.title)}</span>
+          <span class="tags">${n.tags.map((t) => `<span class="tag-pill" data-filter-tag="${escapeAttr(t.name)}">#${escapeHtml(t.name)}</span>`).join("")}</span>
+        </div>
+        <span class="note-line-date">${new Date(n.updated_at).toLocaleDateString()}</span>
+        <div class="row-menu">
+          <button class="row-menu-btn" data-menu="${n.id}">⋮</button>
+          <div class="row-menu-dropdown hidden" id="menu-${n.id}">
+            <button data-edit="${n.id}">Edit</button>
+            <button data-delete="${n.id}" class="danger">Delete</button>
+          </div>
+        </div>
+      </div>`).join("")}</div>`;
+
+    body.querySelectorAll(".note-line").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".row-menu") || e.target.closest(".tag-pill")) return;
+        this.noteEditor(Number(row.dataset.id));
+      });
+    });
+    body.querySelectorAll("[data-filter-tag]").forEach((pill) => {
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        App.navigate("notes", { presetTag: pill.dataset.filterTag });
+      });
+    });
+    body.querySelectorAll(".row-menu-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const dropdown = document.getElementById(`menu-${btn.dataset.menu}`);
+        document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
+        dropdown.classList.toggle("hidden");
+      });
+    });
+    body.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", (e) => { e.stopPropagation(); this.noteEditor(Number(btn.dataset.edit)); }));
+    body.querySelectorAll("[data-delete]").forEach((btn) => btn.addEventListener("click", (e) => { e.stopPropagation(); this.deleteNoteFromList(Number(btn.dataset.delete)); }));
+
+    document.addEventListener("click", () => document.querySelectorAll(".row-menu-dropdown").forEach((d) => d.classList.add("hidden")), { once: true });
+  },
+
+  async deleteNoteFromList(id) {
+    if (!confirm("Delete this note? This cannot be undone.")) return;
+    try {
+      await Api.deleteNote(id);
+      Toast.success("Note deleted.");
+      this.loadNotesList();
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  // ---------------- NOTE EDITOR ----------------
+  async noteEditor(id) {
+    this.currentEditorId = id;
+    this.aiMode = null;
+    this.aiResultText = null;
+    const container = document.getElementById("content-area");
+    let note = { title: "", content_md: "", tags: [], reminder: null };
+
+    if (id) {
+      container.innerHTML = `<div class="state-loading">${Spinner.html()}<p>Loading note...</p></div>`;
+      try { note = await Api.getNote(id); }
+      catch (err) { container.innerHTML = ErrorState.html(err.message, `Pages.noteEditor(${id})`); return; }
+    }
+
+    container.innerHTML = `
+      <div class="editor-layout">
+        <div class="editor-main card">
+          <div class="editor-top">
+            <input type="text" id="note-title" placeholder="Untitled note" value="${escapeAttr(note.title)}">
+            <span id="autosave-status" class="autosave-status"></span>
+            <button class="btn-outline" id="editor-back">← Back</button>
+            <button class="btn-primary" id="editor-save">${id ? "Save Changes" : "Create Note"}</button>
+            ${id ? '<button class="btn-danger-outline" id="editor-delete">Delete Note</button>' : ""}
+          </div>
+
+          <label class="field-label">Your note</label>
+          <div class="rt-toolbar">
+            <button type="button" data-cmd="strong" title="Bold"><b>B</b></button>
+            <button type="button" data-cmd="em" title="Italic"><i>I</i></button>
+            <button type="button" data-cmd="u" title="Underline"><u>U</u></button>
+            <span class="rt-sep"></span>
+            <button type="button" class="hl-swatch hl-yellow" data-hl="hl-yellow" title="Highlight yellow"></button>
+            <button type="button" class="hl-swatch hl-green" data-hl="hl-green" title="Highlight green"></button>
+            <button type="button" class="hl-swatch hl-pink" data-hl="hl-pink" title="Highlight pink"></button>
+            <button type="button" class="hl-swatch hl-blue" data-hl="hl-blue" title="Highlight blue"></button>
+          </div>
+          <div id="note-content" class="rt-editor" contenteditable="true" data-placeholder="Write your note..."></div>
+
+          <label class="field-label">Tags</label>
+          <div id="tag-pills" class="tag-pills"></div>
+          <input type="text" id="tag-input" placeholder="Type a tag and press Enter">
+        </div>
+
+        <div class="editor-side">
+          <div class="card ai-pane">
+            <div class="ai-pane-header">
+              <h3 id="ai-pane-title">Preview</h3>
+              <div class="ai-buttons">
+                <button class="btn-outline" id="ai-summarize-btn" ${id ? "" : "disabled"}>Summarize</button>
+                <button class="btn-outline" id="ai-refine-btn" ${id ? "" : "disabled"}>Fix Grammar</button>
+              </div>
+            </div>
+            ${id ? "" : '<p class="hint">Save the note first to use AI tools.</p>'}
+            <div id="ai-pane-body" class="preview"></div>
+            <div id="ai-pane-actions" class="ai-result-actions hidden">
+              <button class="btn-primary" id="ai-apply-btn"></button>
+              <button class="btn-outline" id="ai-dismiss-btn"></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Upload PDF</h3>
+            <label class="dropzone" id="editor-dropzone">
+              <input type="file" id="editor-pdf-input" accept="application/pdf" hidden>
+              <span>⬆️ Drag &amp; drop a PDF or click to upload</span>
+              <span class="dropzone-hint">Max size: 5MB · PDF only</span>
+            </label>
+            <div id="editor-upload-progress" class="upload-progress hidden">
+              <div class="upload-file-row"><span id="upload-filename"></span><span id="upload-pct">0%</span></div>
+              <div class="progress-track"><div id="upload-bar" class="progress-bar"></div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Reminder</h3>
+            <div id="reminder-body"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("note-content").innerHTML = markdownToEditableHtml(note.content_md);
+    this.renderTagPills(note.tags.map((t) => t.name));
+    this.renderReminder(note.reminder, id);
+    this.wireEditorEvents(id);
+    this.renderAiPane();
+  },
+
+  renderTagPills(names) {
+    const box = document.getElementById("tag-pills");
+    box.innerHTML = names.map((n) => `<span class="tag-pill editable" data-tag="${escapeAttr(n)}">#${escapeHtml(n)}<button type="button">×</button></span>`).join("");
+    box.querySelectorAll(".tag-pill button").forEach((btn) => {
+      btn.addEventListener("click", () => { btn.parentElement.remove(); this.scheduleAutosave(); });
     });
   },
 
-  async open(id) {
-    const note = await Api.getNote(id);
-    this.currentId = note.id;
-    document.getElementById("editor-panel").classList.remove("hidden");
-    document.getElementById("note-title").value = note.title;
-    document.getElementById("note-content").value = note.content_md;
-    document.getElementById("note-tags").value = note.tags.map((t) => t.name).join(", ");
-    this.renderPreview(note.content_md);
-    this.renderReminderInfo(note.reminder);
-    this.hideAiResult();
-    document.querySelectorAll(".note-card").forEach((c) => c.classList.toggle("active", Number(c.dataset.id) === id));
+  getCurrentTags() {
+    return [...document.querySelectorAll("#tag-pills .tag-pill")].map((el) => el.dataset.tag);
   },
 
-  newNote() {
-    this.currentId = null;
-    document.getElementById("editor-panel").classList.remove("hidden");
-    document.getElementById("note-title").value = "";
-    document.getElementById("note-content").value = "";
-    document.getElementById("note-tags").value = "";
-    this.renderPreview("");
-    this.renderReminderInfo(null);
-    this.hideAiResult();
-    document.querySelectorAll(".note-card").forEach((c) => c.classList.remove("active"));
-    document.getElementById("note-title").focus();
-  },
-
-  onEdit() {
-    this.renderPreview(document.getElementById("note-content").value);
-    this.setStatus("Editing...");
-    clearTimeout(this.autosaveTimer);
-    this.autosaveTimer = setTimeout(() => this.save(true), 1500);
-  },
-
-  renderPreview(md) {
-    // Lightweight client preview; the server-sanitized version is used for sharing/export.
-    document.getElementById("note-preview").innerHTML = simpleMarkdownPreview(md);
-  },
-
-  renderReminderInfo(reminder) {
-    const el = document.getElementById("reminder-info");
-    const btn = document.getElementById("reminder-btn");
+  renderReminder(reminder, noteId) {
+    const box = document.getElementById("reminder-body");
+    if (!noteId) { box.innerHTML = '<p class="hint">Save the note first to set a reminder.</p>'; return; }
     if (reminder) {
-      el.textContent = `Review stage ${reminder.stage + 1} · next review ${new Date(reminder.next_review_at).toLocaleDateString()}`;
-      el.classList.remove("hidden");
-      btn.textContent = "Mark reviewed";
-      btn.onclick = () => this.completeReminder();
+      box.innerHTML = `
+        <p class="reminder-line">Stage ${reminder.stage + 1} of 4 · Next review <strong>${new Date(reminder.next_review_at).toLocaleDateString()}</strong></p>
+        <button class="btn-block btn-primary" id="reminder-complete-btn">Mark as Reviewed</button>
+        <button class="btn-block btn-danger-outline" id="reminder-cancel-btn">Cancel Reminder</button>`;
+      document.getElementById("reminder-complete-btn").addEventListener("click", async () => {
+        const updated = await Api.completeReminder(noteId);
+        this.renderReminder(updated, noteId);
+        Toast.success("Marked as reviewed — next review scheduled.");
+      });
+      document.getElementById("reminder-cancel-btn").addEventListener("click", async () => {
+        await Api.cancelReminder(noteId);
+        this.renderReminder(null, noteId);
+        Toast.success("Reminder cancelled.");
+      });
     } else {
-      el.classList.add("hidden");
-      btn.textContent = "Start review reminder";
-      btn.onclick = () => this.startReminder();
+      box.innerHTML = '<button class="btn-block btn-outline" id="reminder-start-btn">Start Review Reminder</button>';
+      document.getElementById("reminder-start-btn").addEventListener("click", async () => {
+        const created = await Api.startReminder(noteId);
+        this.renderReminder(created, noteId);
+        Toast.success("Reminder scheduled.");
+      });
     }
+  },
+
+  wireEditorEvents(id) {
+    document.getElementById("editor-back").addEventListener("click", () => App.navigate("notes"));
+    document.getElementById("editor-save").addEventListener("click", () => this.saveNote(false));
+    if (id) document.getElementById("editor-delete").addEventListener("click", () => this.deleteNote(id));
+
+    document.getElementById("note-title").addEventListener("input", () => this.scheduleAutosave());
+
+    document.querySelectorAll(".rt-toolbar [data-cmd]").forEach((btn) => {
+      btn.addEventListener("mousedown", (e) => e.preventDefault());
+      btn.addEventListener("click", () => wrapSelection(btn.dataset.cmd));
+    });
+    document.querySelectorAll(".hl-swatch").forEach((btn) => {
+      btn.addEventListener("mousedown", (e) => e.preventDefault());
+      btn.addEventListener("click", () => wrapSelection("mark", btn.dataset.hl));
+    });
+
+    const editor = document.getElementById("note-content");
+    editor.addEventListener("input", () => { this.renderAiPane(); this.scheduleAutosave(); });
+    editor.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); document.execCommand("insertLineBreak"); }
+    });
+    editor.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
+
+    const tagInput = document.getElementById("tag-input");
+    tagInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && tagInput.value.trim()) {
+        e.preventDefault();
+        const name = tagInput.value.trim().toLowerCase();
+        if (!this.getCurrentTags().includes(name)) { this.renderTagPills([...this.getCurrentTags(), name]); this.scheduleAutosave(); }
+        tagInput.value = "";
+      }
+    });
+
+    document.getElementById("ai-summarize-btn").addEventListener("click", () => this.runAi("summarize"));
+    document.getElementById("ai-refine-btn").addEventListener("click", () => this.runAi("refine"));
+
+    const dropzone = document.getElementById("editor-dropzone");
+    const pdfInput = document.getElementById("editor-pdf-input");
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag"); });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+    dropzone.addEventListener("drop", (e) => { e.preventDefault(); dropzone.classList.remove("drag"); if (e.dataTransfer.files[0]) this.uploadPdf(e.dataTransfer.files[0]); });
+    pdfInput.addEventListener("change", (e) => { if (e.target.files[0]) this.uploadPdf(e.target.files[0]); });
+  },
+
+  renderAiPane() {
+    const title = document.getElementById("ai-pane-title");
+    const body = document.getElementById("ai-pane-body");
+    const actions = document.getElementById("ai-pane-actions");
+
+    if (this.aiMode && this.aiResultText !== null) {
+      title.textContent = this.aiMode === "summarize" ? "AI Summary" : "AI Grammar Fix";
+      body.innerHTML = simpleMarkdownPreview(this.aiResultText);
+
+      const applyBtn = document.getElementById("ai-apply-btn");
+      const dismissBtn = document.getElementById("ai-dismiss-btn");
+      applyBtn.textContent = this.aiMode === "summarize" ? "Use This Summary" : "Apply Grammar Fix";
+      dismissBtn.textContent = this.aiMode === "summarize" ? "Discard Summary" : "Discard Corrections";
+      applyBtn.onclick = () => this.acceptAiResult();
+      dismissBtn.onclick = () => this.dismissAiResult();
+      actions.classList.remove("hidden");
+    } else {
+      title.textContent = "Preview";
+      const content = serializeEditableToMarkdown(document.getElementById("note-content"));
+      body.innerHTML = content.trim() ? simpleMarkdownPreview(content) : '<p class="hint">Nothing to preview yet.</p>';
+      actions.classList.add("hidden");
+    }
+  },
+
+  scheduleAutosave() {
+    if (!this.currentEditorId) return;
+    document.getElementById("autosave-status").textContent = "Editing...";
+    clearTimeout(this.autosaveTimer);
+    this.autosaveTimer = setTimeout(() => this.saveNote(true), 1200);
   },
 
   getFormPayload() {
     return {
       title: document.getElementById("note-title").value.trim() || "Untitled",
-      content_md: document.getElementById("note-content").value,
-      tags: document.getElementById("note-tags").value.split(",").map((t) => t.trim()).filter(Boolean),
+      content_md: serializeEditableToMarkdown(document.getElementById("note-content")),
+      tags: this.getCurrentTags(),
     };
   },
 
-  async save(isAutosave = false) {
+  async saveNote(isAutosave) {
     const payload = this.getFormPayload();
-    let note;
-    if (this.currentId) {
-      note = await Api.updateNote(this.currentId, payload);
-    } else {
-      note = await Api.createNote(payload);
-      this.currentId = note.id;
+    const status = document.getElementById("autosave-status");
+    try {
+      if (this.currentEditorId) {
+        await Api.updateNote(this.currentEditorId, payload);
+      } else {
+        const created = await Api.createNote(payload);
+        this.currentEditorId = created.id;
+        this.noteEditor(created.id);
+        Toast.success("Note created.");
+        return;
+      }
+      status.textContent = isAutosave ? "Autosaved ✓" : "Saved ✓";
+      if (!isAutosave) Toast.success("Note saved.");
+    } catch (err) {
+      status.textContent = "";
+      Toast.error(err.message);
     }
-    this.setStatus(isAutosave ? "Autosaved" : "Saved");
-    await this.refreshList();
   },
 
-  async remove() {
-    if (!this.currentId) return;
-    if (!confirm("Delete this note?")) return;
-    await Api.deleteNote(this.currentId);
-    this.currentId = null;
-    document.getElementById("editor-panel").classList.add("hidden");
-    await this.refreshList();
-  },
-
-  async startReminder() {
-    if (!this.currentId) { alert("Save the note first"); return; }
-    const reminder = await Api.startReminder(this.currentId);
-    this.renderReminderInfo(reminder);
-  },
-
-  async completeReminder() {
-    if (!this.currentId) return;
-    const reminder = await Api.completeReminder(this.currentId);
-    this.renderReminderInfo(reminder);
+  async deleteNote(id) {
+    if (!confirm("Delete this note? This cannot be undone.")) return;
+    try { await Api.deleteNote(id); Toast.success("Note deleted."); App.navigate("notes"); }
+    catch (err) { Toast.error(err.message); }
   },
 
   async runAi(kind) {
-    if (!this.currentId) { alert("Save the note first"); return; }
-    this.setStatus(kind === "summarize" ? "Summarizing..." : "Refining...");
+    if (!this.currentEditorId) return;
+    Toast.info(kind === "summarize" ? "Summarizing..." : "Refining grammar...");
     try {
-      const { result } = kind === "summarize" ? await Api.summarize(this.currentId) : await Api.refine(this.currentId);
-      document.getElementById("ai-result-label").textContent = kind === "summarize" ? "AI Summary" : "AI Grammar Refinement";
-      document.getElementById("ai-result-text").textContent = result;
-      document.getElementById("ai-result").classList.remove("hidden");
-      this.setStatus("");
+      const { result } = kind === "summarize"
+        ? await Api.summarize(this.currentEditorId)
+        : await Api.refine(this.currentEditorId);
+      this.aiMode = kind;
+      this.aiResultText = result;
+      this.renderAiPane();
     } catch (err) {
-      this.setStatus("");
-      alert(err.message);
+      Toast.error(err.message);
     }
   },
 
-  applyAiResult() {
-    const text = document.getElementById("ai-result-text").textContent;
-    document.getElementById("note-content").value = text;
-    this.onEdit();
-    this.hideAiResult();
+  async acceptAiResult() {
+    document.getElementById("note-content").innerHTML = markdownToEditableHtml(this.aiResultText);
+    const wasSummarize = this.aiMode === "summarize";
+    this.aiMode = null;
+    this.aiResultText = null;
+    await this.saveNote(false);
+    Toast.success(wasSummarize ? "Note replaced with AI summary." : "Grammar corrections applied.");
+    this.renderAiPane();
   },
 
-  hideAiResult() {
-    document.getElementById("ai-result").classList.add("hidden");
+  dismissAiResult() {
+    this.aiMode = null;
+    this.aiResultText = null;
+    this.renderAiPane();
   },
 
-  async uploadPdf(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    this.setStatus("Uploading PDF...");
+  async uploadPdf(file) {
+    const progressBox = document.getElementById("editor-upload-progress");
+    progressBox.classList.remove("hidden");
+    document.getElementById("upload-filename").textContent = file.name;
+    const bar = document.getElementById("upload-bar");
+    const pct = document.getElementById("upload-pct");
+    bar.style.width = "0%";
+    pct.textContent = "Uploading...";
     try {
-      const note = await Api.uploadPdf(file);
-      await this.refreshList();
-      await this.open(note.id);
-      this.setStatus("");
+      const note = await Api.uploadPdf(file, (percent) => {
+        bar.style.width = percent + "%";
+        pct.textContent = percent < 100 ? `${percent}%` : "Extracting text...";
+      });
+      bar.style.width = "100%";
+      pct.textContent = "100%";
+      Toast.success("PDF uploaded — note created.");
+      setTimeout(() => this.noteEditor(note.id), 400);
     } catch (err) {
-      this.setStatus("");
-      alert(err.message);
-    } finally {
-      e.target.value = "";
+      progressBox.classList.add("hidden");
+      Toast.error(err.message);
     }
   },
 
-  setStatus(text) {
-    document.getElementById("autosave-status").textContent = text;
+  // ---------------- REMINDERS ----------------
+  async reminders(container) {
+    container.innerHTML = `<div class="state-loading">${Spinner.html()}<p>Loading reminders...</p></div>`;
+    let notes;
+    try { notes = await Api.listNotes(); }
+    catch (err) { container.innerHTML = ErrorState.html(err.message, "App.navigate('reminders')"); return; }
+
+    const withReminders = notes.filter((n) => n.reminder);
+    this.renderReminderPage(container, withReminders);
+  },
+
+  renderReminderPage(container, withReminders) {
+    const today = new Date().toDateString();
+    const filtered = withReminders.filter((n) => {
+      const due = new Date(n.reminder.next_review_at);
+      if (this.reminderTab === "today") return due <= new Date() || due.toDateString() === today;
+      if (this.reminderTab === "upcoming") return due > new Date() && due.toDateString() !== today;
+      if (this.reminderTab === "completed") return n.reminder.completed;
+      return true;
+    });
+
+    container.innerHTML = `
+      <div class="reminders-toolbar">
+        <div class="tabs-pill">
+          ${["all", "today", "upcoming", "completed"].map((t) => `<button class="pill-tab ${this.reminderTab === t ? "active" : ""}" data-rtab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}
+        </div>
+        <button class="btn-primary" id="add-reminder-btn">+ Add Reminder</button>
+      </div>
+      <div id="add-reminder-box" class="card hidden"></div>
+      <div id="reminder-list">${filtered.length ? `<div class="notes-table">${filtered.map((n) => this.reminderRow(n)).join("")}</div>` : EmptyState.html("Nothing here", "No reminders in this view yet.", null, "")}</div>
+    `;
+
+    container.querySelectorAll("[data-rtab]").forEach((btn) => {
+      btn.addEventListener("click", () => { this.reminderTab = btn.dataset.rtab; this.renderReminderPage(container, withReminders); });
+    });
+
+    document.getElementById("add-reminder-btn").addEventListener("click", () => this.showAddReminderBox(container));
+
+    container.querySelectorAll("[data-check]").forEach((cb) => {
+      cb.addEventListener("change", async () => {
+        await Api.completeReminder(Number(cb.dataset.check));
+        Toast.success("Marked as reviewed.");
+        this.reminders(container);
+      });
+    });
+    container.querySelectorAll(".row-menu-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const dropdown = document.getElementById(`rmenu-${btn.dataset.menu}`);
+        document.querySelectorAll(".row-menu-dropdown").forEach((d) => { if (d !== dropdown) d.classList.add("hidden"); });
+        dropdown.classList.toggle("hidden");
+      });
+    });
+    container.querySelectorAll("[data-cancel]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await Api.cancelReminder(Number(btn.dataset.cancel));
+        Toast.success("Reminder cancelled.");
+        this.reminders(container);
+      });
+    });
+    container.querySelectorAll("[data-open]").forEach((btn) => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); App.navigate("notes", { openId: Number(btn.dataset.open) }); });
+    });
+    document.addEventListener("click", () => document.querySelectorAll(".row-menu-dropdown").forEach((d) => d.classList.add("hidden")), { once: true });
+  },
+
+  reminderRow(n) {
+    return `
+      <div class="note-line reminder-row">
+        <label class="checkbox reminder-check">
+          <input type="checkbox" data-check="${n.id}" ${n.reminder.completed ? "checked disabled" : ""}>
+          <span class="note-line-title">${escapeHtml(n.title)}</span>
+        </label>
+        <span class="note-line-date">${new Date(n.reminder.next_review_at).toLocaleDateString()}</span>
+        <div class="row-menu">
+          <button class="row-menu-btn" data-menu="${n.id}">⋮</button>
+          <div class="row-menu-dropdown hidden" id="rmenu-${n.id}">
+            <button data-open="${n.id}">Open note</button>
+            <button data-cancel="${n.id}" class="danger">Cancel reminder</button>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  async showAddReminderBox(container) {
+    const box = document.getElementById("add-reminder-box");
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="state-loading">${Spinner.html()}</div>`;
+    const notes = await Api.listNotes();
+    const candidates = notes.filter((n) => !n.reminder);
+    if (candidates.length === 0) {
+      box.innerHTML = `<p class="hint">Every note already has an active reminder.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <label class="field-label">Pick a note to schedule a review for</label>
+      <select id="add-reminder-select">${candidates.map((n) => `<option value="${n.id}">${escapeHtml(n.title)}</option>`).join("")}</select>
+      <button class="btn-primary" id="add-reminder-confirm">Set Reminder</button>`;
+    document.getElementById("add-reminder-confirm").addEventListener("click", async () => {
+      const noteId = Number(document.getElementById("add-reminder-select").value);
+      await Api.startReminder(noteId);
+      Toast.success("Reminder scheduled.");
+      this.reminders(container);
+    });
+  },
+
+  // ---------------- PROFILE ----------------
+  profile(container) {
+    const email = Api.userEmail || "unknown@example.com";
+    const initial = email[0].toUpperCase();
+    container.innerHTML = `
+      <div class="profile-layout">
+        <div class="card profile-card">
+          <div class="avatar-lg">${initial}</div>
+          <h3>${escapeHtml(email.split("@")[0])}</h3>
+          <p class="hint">${escapeHtml(email)}</p>
+          <button class="btn-outline btn-block" id="profile-settings-btn">⚙️ Settings</button>
+          <button class="btn-danger-outline btn-block" id="profile-logout-btn">↩️ Logout</button>
+        </div>
+        <div class="card">
+          <h3>Settings</h3>
+          ${this.settingsRows()}
+        </div>
+      </div>`;
+    document.getElementById("profile-settings-btn").addEventListener("click", () => App.navigate("settings"));
+    document.getElementById("profile-logout-btn").addEventListener("click", () => Auth.logout());
+    this.wireSettingsRows(container);
+  },
+
+  // ---------------- SETTINGS ----------------
+  settings(container) {
+    container.innerHTML = `<div class="card settings-card"><h3>Settings</h3>${this.settingsRows()}</div>`;
+    this.wireSettingsRows(container);
+  },
+
+  settingsRows() {
+    return `
+      <button class="settings-row" data-setting="password"><span>🔒 Change Password</span><span>›</span></button>
+      <button class="settings-row" data-setting="notifications"><span>🔔 Notification Preferences</span><span>›</span></button>
+      <button class="settings-row" data-setting="appearance"><span>🎨 Appearance</span><span>›</span></button>
+    `;
+  },
+
+  wireSettingsRows(container) {
+    container.querySelectorAll("[data-setting]").forEach((btn) => {
+      btn.addEventListener("click", () => Toast.info(`${btn.textContent.trim()} isn't part of this demo build.`));
+    });
   },
 };
 
+// ---------------- shared helpers ----------------
 function debounce(fn, delay) {
   let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
 }
 
 function escapeHtml(str) {
   const div = document.createElement("div");
-  div.textContent = str;
+  div.textContent = str ?? "";
   return div.innerHTML;
 }
 
+function escapeAttr(str) { return escapeHtml(str).replace(/"/g, "&quot;"); }
+
+const HL_CLASSES = ["hl-yellow", "hl-green", "hl-pink", "hl-blue"];
+
+function wrapSelection(tagName, className) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  const el = document.createElement(tagName);
+  if (className) el.className = className;
+  try {
+    range.surroundContents(el);
+  } catch (_) {
+    const frag = range.extractContents();
+    el.appendChild(frag);
+    range.insertNode(el);
+  }
+  sel.removeAllRanges();
+  document.getElementById("note-content")?.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function serializeEditableToMarkdown(root) {
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const inner = [...node.childNodes].map(walk).join("");
+    switch (node.tagName) {
+      case "STRONG": case "B": return `**${inner}**`;
+      case "EM": case "I": return `*${inner}*`;
+      case "U": return `<u>${inner}</u>`;
+      case "MARK": {
+        const cls = HL_CLASSES.includes(node.className) ? node.className : "hl-yellow";
+        return `<mark class="${cls}">${inner}</mark>`;
+      }
+      case "BR": return "\n";
+      default: return inner;
+    }
+  }
+  return walk(root).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function markdownToEditableHtml(md) {
+  let html = escapeHtml(normalizeListBreaks(md));
+  html = html
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, "<u>$1</u>")
+    .replace(/&lt;mark class="(hl-[a-z]+)"&gt;(.*?)&lt;\/mark&gt;/g, '<mark class="$1">$2</mark>')
+    .replace(/^(\d+\.\s.*)\n?/gm, '<div class="md-line">$1</div>')
+    .replace(/^(-\s.*)\n?/gm, '<div class="md-line md-bullet">$1</div>')
+    .replace(/\*{1,}/g, "")
+    .replace(/\n/g, "<br>");
+  return html;
+}
+
 function simpleMarkdownPreview(md) {
-  // Minimal client-side preview only (escaped first, so no HTML injection).
-  let html = escapeHtml(md);
+  let html = escapeHtml(normalizeListBreaks(md));
   html = html
     .replace(/^### (.*)$/gm, "<h3>$1</h3>")
     .replace(/^## (.*)$/gm, "<h2>$1</h2>")
     .replace(/^# (.*)$/gm, "<h1>$1</h1>")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, "<u>$1</u>")
+    .replace(/&lt;mark class="(hl-[a-z]+)"&gt;(.*?)&lt;\/mark&gt;/g, '<mark class="$1">$2</mark>')
     .replace(/`(.+?)`/g, "<code>$1</code>")
     .replace(/^- (.*)$/gm, "<li>$1</li>")
+    .replace(/^> (.*)$/gm, "<blockquote>$1</blockquote>")
     .replace(/\n/g, "<br>");
   return html;
+}
+
+function normalizeListBreaks(text) {
+  return text
+    .replace(/(\w)(\*\*)/g, "$1 $2")
+    .replace(/(\S)(\s*)(\d+\.\s)/g, "$1\n$3")
+    .replace(/(\S)(\s*)(-\s)/g, "$1\n$3")
+    .replace(/\n{2,}/g, "\n");
 }

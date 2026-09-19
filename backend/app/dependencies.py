@@ -21,7 +21,11 @@ def get_current_user(
     user_id = decode_access_token(token)
     if user_id is None:
         raise credentials_error
-    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        raise credentials_error
+    user = db.query(models.User).filter(models.User.id == uid).first()
     if user is None:
         raise credentials_error
     return user

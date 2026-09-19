@@ -8,13 +8,13 @@ from app.config import settings
 ALGORITHM = "HS256"
 
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+_MAX_BCRYPT_BYTES = 72
 
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8")[:_MAX_BCRYPT_BYTES], bcrypt.gensalt()).decode()
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
-
+    return bcrypt.checkpw(password.encode("utf-8")[:_MAX_BCRYPT_BYTES], hashed.encode())
 
 def create_access_token(subject: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
