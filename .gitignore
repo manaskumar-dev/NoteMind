@@ -8,6 +8,6 @@ __pycache__/
 
 # Local DB
 *.db
-
+notes.db
 # OS
 .DS_Store
