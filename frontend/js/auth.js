@@ -14,10 +14,6 @@ const Auth = {
 
     document.getElementById("login-form").addEventListener("submit", (e) => this.handleLogin(e));
     document.getElementById("register-form").addEventListener("submit", (e) => this.handleRegister(e));
-    document.getElementById("forgot-password").addEventListener("click", (e) => {
-      e.preventDefault();
-      Toast.info("Password reset isn't part of this demo build.");
-    });
   },
 
   switchTab(tab) {

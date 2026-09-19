@@ -28,11 +28,6 @@
   --muted: #9096a5;
 }
 
-:root[data-theme="dark"] input,
-:root[data-theme="dark"] select,
-:root[data-theme="dark"] textarea,
-:root[data-theme="dark"] .input-icon,
-:root[data-theme="dark"] .input-icon input,
 :root[data-theme="dark"] .rt-toolbar,
 :root[data-theme="dark"] .rt-editor,
 :root[data-theme="dark"] .toast,
@@ -60,10 +55,21 @@ input, select, textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   outline: none;
-  background: #fff;
+  background: var(--card);
+  color: var(--text);
   width: 100%;
 }
 input:focus, textarea:focus, select:focus { border-color: var(--primary); }
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--card) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  transition: background-color 9999s ease-in-out 0s;
+}
 
 button { cursor: pointer; border: none; border-radius: var(--radius); }
 .btn-primary { background: var(--primary); color: #fff; padding: 0.6rem 1.1rem; }
@@ -89,7 +95,7 @@ button { cursor: pointer; border: none; border-radius: var(--radius); }
 .auth-form h2 { margin: 0 0 1.1rem; font-size: 1.1rem; }
 .auth-form label { display: block; font-size: 0.8rem; font-weight: 600; margin: 0.7rem 0 0.3rem; }
 
-.input-icon { display: flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 0.6rem; background: #fff; }
+.input-icon { display: flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 0.6rem; background: var(--card); overflow: hidden; }
 .input-icon input { border: none; padding: 0.6rem 0.2rem; }
 .input-icon input:focus { border: none; }
 .input-icon .eye-toggle { background: none; padding: 0.2rem; }
